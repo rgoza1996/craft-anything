@@ -132,7 +132,9 @@ pub fn detect(b: &Binary, data: &[u8]) -> Vec<Hint> {
         push(&mut out, hint("node", "runtime", "Node.js runtime", "weak", "Node.js symbols or library"));
     }
     // Flutter / Dart
-    if lib("libflutter").is_some() || lib("Flutter.framework").is_some() {
+    if b.format == Format::Pe && b.libraries.iter().any(|name| name.eq_ignore_ascii_case("flutter_windows.dll")) {
+        push(&mut out, hint("flutter", "framework", "Flutter (Dart)", "strong", "imports flutter_windows.dll"));
+    } else if lib("libflutter").is_some() || lib("Flutter.framework").is_some() {
         push(&mut out, hint("flutter", "framework", "Flutter (Dart)", "strong", "links the Flutter engine"));
     } else if sym("kDartVmSnapshotData") || sym("_kDartVmSnapshotData") || sym("kDartIsolateSnapshotInstructions") {
         push(&mut out, hint("flutter", "framework", "Flutter (Dart AOT snapshot)", "strong", "Dart snapshot symbols"));

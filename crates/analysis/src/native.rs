@@ -133,8 +133,12 @@ pub fn triage(bin: &Binary, data: &[u8], file_name: &str) -> Report {
         tools.insert(0, ("js_app_map", "the app's logic is JavaScript inside resources/app.asar, not in this file"));
     }
     if has("flutter") {
-        toolsets.push("android");
-        tools.insert(0, ("android_flutter_identify", "Flutter apps keep their Dart code in a snapshot (libapp.so)"));
+        if bin.format == Format::Pe {
+            tools.insert(0, ("app_folder_explain", "look for the Flutter assets and Dart snapshot alongside the Windows program"));
+        } else {
+            toolsets.push("android");
+            tools.insert(0, ("android_flutter_identify", "Flutter apps keep their Dart code in a snapshot (libapp.so)"));
+        }
     }
     if bin.format == Format::MachO || has("objc") || has("swift") {
         toolsets.push("apple");
@@ -1162,6 +1166,27 @@ mod tests {
         let t = triage(&bin, &data, "Sample.dll");
         assert_eq!(t.result["dotnet_arch"], "anycpu");
         assert!(t.summary.contains("any CPU") && !t.summary.contains("32-bit"), "{}", t.summary);
+    }
+
+    #[test]
+    fn triage_recognizes_the_flutter_windows_import() {
+        let mut data = tk::pe64();
+        // Put the DLL name in the unused space between the synthetic import directory and its thunks.
+        const DLL_NAME: usize = 0x728;
+        data[0x70c..0x710].copy_from_slice(&0x2128u32.to_le_bytes());
+        let dll = b"Flutter_Windows.DLL\0";
+        data[DLL_NAME..DLL_NAME + dll.len()].copy_from_slice(dll);
+        let bin = craft_anything_formats::parse_binary(&data).unwrap();
+        let report = triage(&bin, &data, "Sample.exe");
+        assert!(report.summary.contains("Flutter"), "{}", report.summary);
+        assert_eq!(report.confidence, Confidence::Observed);
+        assert_eq!(report.result["next_steps"][0]["tool"], "app_folder_explain");
+
+        // A mention of the DLL in data is insufficient without the corresponding import.
+        let mut data = tk::pe64();
+        data[DLL_NAME..DLL_NAME + dll.len()].copy_from_slice(dll);
+        let bin = craft_anything_formats::parse_binary(&data).unwrap();
+        assert!(!triage(&bin, &data, "Sample.exe").summary.contains("Flutter"));
     }
 
     #[test]
